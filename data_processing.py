@@ -1,6 +1,10 @@
 import string
 from nltk import tokenize
 import numpy as np
+import csv
+import json
+
+SEQUENCE_LENGTH = 4
 
 # load doc into memory
 def load_doc(filename):
@@ -27,12 +31,16 @@ def clean_doc(doc):
   tokens = [word.lower() for word in tokens]
   return tokens
 
+def save_dic(data, infile):
+  json.dump(data, open(infile,'w'))
+
+
 def clean_sentences(sentences):
   new_list = []
   for sentence in sentences:
     tokens = sentence.split()
-    table = str.maketrans('', '', string.punctuation)
-    tokens = [w.translate(table) for w in tokens]
+    # table = str.maketrans('', '', string.punctuation)
+    # tokens = [w.translate(table) for w in tokens]
     tokens = [word for word in tokens if word.isalpha()]
     tokens = [word.lower() for word in tokens]
     new_list.append(tokens)
@@ -42,6 +50,31 @@ def getSentences(doc):
   sentences = tokenize.sent_tokenize(doc)
   return sentences
 
+def getVocab(sentences):
+  flatten = [word for sentence in sentences for word in sentence]
+  return set(flatten)
+
+def word2int(vocab):
+  word_dic = {}
+  for i, token in enumerate(vocab):
+    word_dic[token] = i
+  return word_dic
+
+def change_to_int(sentences, word_dic):
+  new_sentences = []
+  for sentence in sentences:
+    new_sentence = [word_dic[word] for word in sentence]
+    new_sentences.append(new_sentence)
+  return new_sentences
+
+def split_input_output(sentences, input_length):
+  data = []
+  for sentence in sentences:
+    if len(sentence) <= input_length: break
+    x = [sentence[:input_length]]
+    y = [sentence[input_length:]]
+    data.append([x,y])
+  return data
 
 
 def organise_data(tokens, seq_len):
@@ -64,6 +97,12 @@ def save_doc(lines, filename):
   file.write(data)
   file.close()
 
+def write_csv(data, filename):
+  with open(filename,'w') as f:
+    writer = csv.writer(f)
+    writer.writerows(data)
+  f.close()
+
 def combine_to_sentence(tokens):
   sequences = []
   for token in tokens:
@@ -77,5 +116,10 @@ if __name__ == '__main__':
   out_filename = 'species_sentences.txt'
   doc = load_doc(in_filename)
   sentences = getSentences(doc)
-  cleaned = clean_sentences(sentences)
-  save_doc(combine_to_sentence(cleaned), out_filename)
+  sentences = clean_sentences(sentences)
+  vocab = getVocab(sentences)
+  word_dic = word2int(vocab)
+  save_dic(word_dic, 'word_dic2.json')
+  data = change_to_int(sentences, word_dic)
+  write_csv(data, 'data2.csv')
+  
