@@ -3,6 +3,7 @@ from nltk import tokenize
 import numpy as np
 import csv
 import json
+dev = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 SEQUENCE_LENGTH = 4
 
@@ -48,6 +49,7 @@ def clean_sentences(sentences):
 
 def getSentences(doc):
   sentences = tokenize.sent_tokenize(doc)
+  sentences = [extrasplit for sent in sentences for extrasplit in sent.split(';')]
   return sentences
 
 def getVocab(sentences):
@@ -57,7 +59,7 @@ def getVocab(sentences):
 def word2int(vocab):
   word_dic = {}
   for i, token in enumerate(vocab):
-    word_dic[token] = i
+    word_dic[token] = i+1
   return word_dic
 
 def change_to_int(sentences, word_dic):
@@ -67,14 +69,6 @@ def change_to_int(sentences, word_dic):
     new_sentences.append(new_sentence)
   return new_sentences
 
-def split_input_output(sentences, input_length):
-  data = []
-  for sentence in sentences:
-    if len(sentence) <= input_length: break
-    x = [sentence[:input_length]]
-    y = [sentence[input_length:]]
-    data.append([x,y])
-  return data
 
 
 def organise_data(tokens, seq_len):
@@ -120,6 +114,7 @@ if __name__ == '__main__':
   vocab = getVocab(sentences)
   word_dic = word2int(vocab)
   save_dic(word_dic, 'word_dic2.json')
+  save_doc(sentences, out_filename)
   data = change_to_int(sentences, word_dic)
   write_csv(data, 'data2.csv')
   
