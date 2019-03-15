@@ -77,6 +77,7 @@ def fit(model, opt, loss_func, epochs, bs):
       # yb = torch.stack([one_hot_encoding(vocab_size, y) for y in y_bs]).squeeze().to(dev)
       model.train()
       pred = model(xb)
+      import pdb;pdb.set_trace()
       loss = loss_func(pred, y_bs)
       acc = accuracy(pred, y_bs)
       print('EPOCH: {} step {} loss: {} accuracy: {}'.format(epoch+1, i+1, loss, acc))
@@ -92,7 +93,7 @@ def accuracy(out, yb):
   return (preds==yb).float().mean()
 
 if __name__ == '__main__':
-  in_file = 'species_sentences.txt'
+  in_file = 'species_sentences'
   text = load_doc(in_file)
   text = text.replace('\n', ' ')
   text = text.split()

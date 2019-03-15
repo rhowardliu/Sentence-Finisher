@@ -3,7 +3,6 @@ from nltk import tokenize
 import numpy as np
 import csv
 import json
-dev = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 SEQUENCE_LENGTH = 4
 
@@ -36,14 +35,19 @@ def save_dic(data, infile):
   json.dump(data, open(infile,'w'))
 
 
+def sentence_to_tokens(sentence):
+    tokens = sentence.split()
+    table = str.maketrans('', '', string.punctuation)
+    tokens = [w.translate(table) for w in tokens]
+    tokens = [word for word in tokens if word.isalpha()]
+    tokens = [word.lower() for word in tokens]
+    return tokens
+
+
 def clean_sentences(sentences):
   new_list = []
   for sentence in sentences:
-    tokens = sentence.split()
-    # table = str.maketrans('', '', string.punctuation)
-    # tokens = [w.translate(table) for w in tokens]
-    tokens = [word for word in tokens if word.isalpha()]
-    tokens = [word.lower() for word in tokens]
+    tokens = sentence_to_tokens(sentence)
     new_list.append(tokens)
   return new_list
 
@@ -61,6 +65,8 @@ def word2int(vocab):
   for i, token in enumerate(vocab):
     word_dic[token] = i+1
   return word_dic
+
+ 
 
 def change_to_int(sentences, word_dic):
   new_sentences = []
@@ -106,15 +112,15 @@ def combine_to_sentence(tokens):
 
 if __name__ == '__main__':
 
-  in_filename = 'origin_of_species.txt'
-  out_filename = 'species_sentences.txt'
+  in_filename = 'origin_of_species'
+  out_filename = 'species_sentences'
   doc = load_doc(in_filename)
   sentences = getSentences(doc)
   sentences = clean_sentences(sentences)
   vocab = getVocab(sentences)
   word_dic = word2int(vocab)
   save_dic(word_dic, 'word_dic2.json')
-  save_doc(sentences, out_filename)
+  save_doc(combine_to_sentence(sentences), out_filename)
   data = change_to_int(sentences, word_dic)
   write_csv(data, 'data2.csv')
   
