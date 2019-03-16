@@ -34,7 +34,6 @@ def split_input_output(sentences, min_input, min_pred, max_len):
   return data_x,data_y
 
 
-
 def pad_data(data, nb_seq=None, sort=None):
   sent_len = torch.LongTensor([len(row) for row in data])
   if nb_seq is None:
@@ -44,38 +43,73 @@ def pad_data(data, nb_seq=None, sort=None):
   for i, x_len in enumerate(sent_len):
     sequence = torch.LongTensor(data[i])
     padded_data[i, :x_len] = sequence[:x_len]
-  if sort is None:
+  # if sort is None:
+  #   sent_len, sort = sent_len.sort(0, descending=True)
+  # else:
+  #   sent_len=sent_len[sort]
+  # padded_data = padded_data[sort]
+  return padded_data, sent_len
+
+
+class WrappedLoader(object):
+  """docstring for WrappedLoader"""
+  def __init__(self, dl):
+    super(WrappedLoader, self).__init__()
+    self.dl = dl
+
+  def sort_data(self, sent_len):
     sent_len, sort = sent_len.sort(0, descending=True)
-  else:
-    sent_len=sent_len[sort]
-  padded_data = padded_data[sort]
-  return padded_data, sent_len, sort
+    return sort
+
+  def __len__(self):
+    return len(self.dl)
+
+  def __iter__(self):
+    batches = iter(self.dl)
+    for b in batches:
+      sort = self.sort_data(b[1])
+      b = [a.to(dev) for a in b]
+      b = [a[sort] for a in b]
+      yield b
+
 
 
 class SentenceFinisher(nn.Module):
   """docstring for SentenceFinisher"""
-  def __init__(self, nb_vocab, embed_dims, nb_layers, hidden_lstm, hidden_fcnn):
+  def __init__(self, nb_vocab, embed_dims, nb_layers, hidden_lstm, hidden_fc, bs, dropout_lstm, dropout_fc):
     self.nb_layers = nb_layers
+    self.hidden_lstm = hidden_lstm
     super(SentenceFinisher, self).__init__()
     self.word_embedding = nn.Embedding(nb_vocab, embed_dims, padding_idx = 0)
-    self.lstm = nn.LSTM(input_size = embed_dims, hidden_size = hidden_lstm, num_layers=nb_layers, batch_first = True)
-    self.linear1 = nn.Linear(hidden_lstm, hidden_fcnn)
-    self.linear2 = nn.Linear(hidden_fcnn, nb_vocab)
+    self.lstm = nn.LSTM(input_size = embed_dims, hidden_size = hidden_lstm, num_layers=nb_layers, batch_first = True, dropout = dropout_lstm)
+    # self.linear1 = nn.Linear(hidden_lstm, hidden_fc)
+    # self.dropout_fc = nn.Dropout(p=dropout_fc)
+    self.linear2 = nn.Linear(hidden_fc, nb_vocab)
+
+  def init_lstm_states(self, bs):
+    hidden = torch.randn(self.nb_layers, bs, self.hidden_lstm, requires_grad=True).to(dev)
+    cell = torch.randn(self.nb_layers, bs, self.hidden_lstm, requires_grad = True).to(dev)
+    return hidden, cell
 
   def forward(self, x, sent_len):
-    #bs x seq x 1 -> bs x seq x embed
+    #initialise hidden and cell state
+    bs_len, seq_len = x.shape
+    self.hidden = self.init_lstm_states(bs_len)
+
+    #bs x seq x 1 -> bs x seq x embed   
     x = self.word_embedding(x)
     #bs x seq x embed -> bs x seq x hidden_lstm
     packed_input = nn.utils.rnn.pack_padded_sequence(x, sent_len, batch_first=True)
-    packed_output, (h_n,c_n) = self.lstm(packed_input)
-    output, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True, total_length=self.nb_layers)
-    output = output.contiguous()
+    packed_output, self.hidden = self.lstm(packed_input, self.hidden)
+    output, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True, total_length=seq_len)
     # bs_seq_shape = output.shape[:2]
     #bs x seq x hidden_lstm -> (bs*seq) x hidden_lstm
+    output = output.contiguous()    
     output = output.view(-1, output.shape[2])
     #(bs*seq) x hidden_lstm -> (bs*seq) x hidden_linear
-    output = self.linear1(output)
-    F.relu_(output)
+    # output = self.linear1(output)
+    # output = F.relu(output)
+    # output = self.dropout_fc(output)
     #(bs*seq) x hidden_linear -> (bs*seq) x vocab
     output=self.linear2(output)
     return output
@@ -86,29 +120,38 @@ def loss_mse(output, target, embed_fn):
     embed_target = embed_fn(target)
   return F.mse_loss(embed_output, embed_target)
 
+def accuracy(out, yb):
+  preds = torch.argmax(out, dim=1)
+  return (preds == yb).float().mean()
+
 def adjust_target(dataset):
   dataset = dataset.view(-1).type(torch.int64)
   return dataset
 
-def fit(epochs, loss_fn, train_dl, model, opt):
+def fit(epochs, loss_fn, train_dl, valid_dl, model, opt):
   for epoch in range(epochs):
     model.train()
-    epoch_loss = 0
+    training_stats = []
     for xb, sent_len, yb in train_dl:
-      #add data into gpu
-      xb = xb.to(dev)
-      sent_len = sent_len.to(dev)
-      yb = yb.to(dev)
 
       yb = adjust_target(yb)
       output = model(xb, sent_len)
-      loss = loss_fn(output, yb)
+      loss = loss_fn(output, yb, ignore_index=0)
       epoch_loss = loss
 
       loss.backward()
       opt.step()
       opt.zero_grad()
-    print('Epoch: {} Loss: {}'.format(epoch, epoch_loss))      
+
+    model.eval()
+    with torch.no_grad():
+      for xb, sent_len, yb in valid_dl:
+        yb = adjust_target(yb)
+        output = model(xb, sent_len)
+        training_stats.append([loss_fn(output, yb),accuracy(output, yb)])
+    training_stats = np.asarray(training_stats)
+    epoch_loss, epoch_accuracy = np.mean(training_stats, axis=0)
+    print('Epoch: {} Loss: {} Acc: {}'.format(epoch, epoch_loss, epoch_accuracy))
   return model
 
 if __name__ == '__main__':
@@ -119,36 +162,43 @@ if __name__ == '__main__':
   #hyperparameters
   nb_vocab = 5845  
   bs = 128
-  embed = 50
+  embed = 30
+  lstm_layers = 2
   hidden_lstm = 100
   hidden_linear = 100
-  lr = 1
-  epochs = 100
-  seq_len = 35
+  lr = 0.0001
+  epochs = 40
+  seq_len = 50
+  dropout_lstm = 0.1
+  dropout_fc = 0.1
 
 
   #data
   data = load_data(infile)
-  data_x, data_y = split_input_output(data, min_input=2, min_pred=5, max_len=seq_len)
+  data_x, data_y = split_input_output(data, min_input=5, min_pred=10, max_len=seq_len)
   print('Split data into x and y')
-  data_x, sent_len_x, perm_idx = pad_data(data_x, nb_seq = seq_len)
-  data_y, sent_len_y, _ = pad_data(data_y, seq_len, perm_idx)
+  data_x, sent_len_x = pad_data(data_x, nb_seq = seq_len)
+  data_y, _ = pad_data(data_y, nb_seq = seq_len)
   print('Padded data')
 
 
   #dataloaders
   train_ds = TensorDataset(data_x, sent_len_x, data_y)
   train_dl = DataLoader(train_ds, bs)
+  train_dl = WrappedLoader(train_dl)
+  valid_dl = DataLoader(train_ds, bs*2)
+  valid_dl = WrappedLoader(valid_dl)
+  pdb.set_trace()
 
   #model
-  model = SentenceFinisher(nb_vocab = nb_vocab, embed_dims = embed, nb_layers = seq_len, hidden_lstm = hidden_lstm, hidden_fcnn=hidden_linear)
+  model = SentenceFinisher(nb_vocab = nb_vocab, embed_dims = embed, nb_layers = lstm_layers, hidden_lstm = hidden_lstm, hidden_fc=hidden_linear, bs=bs, dropout_lstm=dropout_lstm, dropout_fc=dropout_fc)
   model.to(dev)
   opt = optim.Adam(model.parameters(), lr)
   loss_fn = F.cross_entropy
   print('Initialised model')
 
   #train
-  model = fit(epochs = epochs, loss_fn=loss_fn, train_dl=train_dl, model=model, opt=opt)
+  model = fit(epochs = epochs, loss_fn=loss_fn, train_dl=train_dl, valid_dl=valid_dl, model=model, opt=opt)
   torch.save(model.state_dict(), './sentence_model.pth')
 
 

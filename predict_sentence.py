@@ -34,13 +34,17 @@ if __name__ == '__main__':
   #hyperparameters
   nb_vocab = 5845  
   bs = 128
-  embed = 30
-  nb_hidden = 50
-  lr = 0.001
-  epochs = 300
-  nb_seq = 25
+  embed = 50
+  lstm_layers = 2
+  hidden_lstm = 100
+  hidden_linear = 100
+  lr = 0.0001
+  epochs = 40
+  seq_len = 35
+  dropout_lstm = 0.1
+  dropout_fc = 0.1
 
-  model = SentenceFinisher(nb_vocab = nb_vocab, embed_dims = embed, nb_layers = nb_seq, nb_hidden = nb_hidden)
+  model = SentenceFinisher(nb_vocab = nb_vocab, embed_dims = embed, nb_layers = lstm_layers, hidden_lstm = hidden_lstm, hidden_fc=hidden_linear, bs=bs, dropout_lstm=dropout_lstm, dropout_fc=dropout_fc)
   model.load_state_dict(torch.load(model_path))
   model.to(dev)
   model.eval()
@@ -54,7 +58,7 @@ if __name__ == '__main__':
       except Exception as e:
         print('Some word is not found in the dictionary. Please try another sentence')
         continue
-      xb = pad_sentence(xb,nb_seq).to(dev)
+      xb = pad_sentence(xb,seq_len).to(dev)
       out = model(xb,[len(tokens)])
       out = torch.argmax(out, dim=1)
       out_seq = out.tolist()
