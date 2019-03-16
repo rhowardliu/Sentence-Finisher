@@ -12,11 +12,15 @@ def pad_sentence(sentence, seq_len):
   padded_data[0,:len(sentence)] = sequence[:]
   return padded_data
 
-def construct_sentence(int_seq, int_dic):
+def construct_sentence(int_seq, int_dic, eol='eol'):
   sentence = ''
   for i in int_seq:
-    if i in int_dic: sentence += int_dic[i] + ' '
-  sentence += '.'
+    if i in int_dic:
+      word = int_dic[i]
+      if word == eol:
+        sentence +='.'
+        break
+      sentence += int_dic[i] + ' '
   return sentence
 
 
@@ -64,6 +68,4 @@ if __name__ == '__main__':
       out_seq = out.tolist()
       sentence = construct_sentence(out_seq, int2word)
       print(sentence)
-      pdb.set_trace()
-
 

@@ -33,6 +33,12 @@ def split_input_output(sentences, min_input, min_pred, max_len):
       data_y.append(y)
   return data_x,data_y
 
+def split_x_y(sequences):
+  data_x = sequences[:-1]
+  data_y = sequences[1:]
+  return data_x, data_y
+
+
 
 def pad_data(data, nb_seq=None, sort=None):
   sent_len = torch.LongTensor([len(row) for row in data])
@@ -67,9 +73,9 @@ class WrappedLoader(object):
   def __iter__(self):
     batches = iter(self.dl)
     for b in batches:
-      sort = self.sort_data(b[1])
+      # sort = self.sort_data(b[1])
       b = [a.to(dev) for a in b]
-      b = [a[sort] for a in b]
+      # b = [a[sort] for a in b]
       yield b
 
 
@@ -82,8 +88,8 @@ class SentenceFinisher(nn.Module):
     super(SentenceFinisher, self).__init__()
     self.word_embedding = nn.Embedding(nb_vocab, embed_dims, padding_idx = 0)
     self.lstm = nn.LSTM(input_size = embed_dims, hidden_size = hidden_lstm, num_layers=nb_layers, batch_first = True, dropout = dropout_lstm)
-    # self.linear1 = nn.Linear(hidden_lstm, hidden_fc)
-    # self.dropout_fc = nn.Dropout(p=dropout_fc)
+    self.linear1 = nn.Linear(hidden_lstm, hidden_fc)
+    self.dropout_fc = nn.Dropout(p=dropout_fc)
     self.linear2 = nn.Linear(hidden_fc, nb_vocab)
 
   def init_lstm_states(self, bs):
@@ -91,7 +97,7 @@ class SentenceFinisher(nn.Module):
     cell = torch.randn(self.nb_layers, bs, self.hidden_lstm, requires_grad = True).to(dev)
     return hidden, cell
 
-  def forward(self, x, sent_len):
+  def forward(self, x):
     #initialise hidden and cell state
     bs_len, seq_len = x.shape
     self.hidden = self.init_lstm_states(bs_len)
@@ -99,17 +105,17 @@ class SentenceFinisher(nn.Module):
     #bs x seq x 1 -> bs x seq x embed   
     x = self.word_embedding(x)
     #bs x seq x embed -> bs x seq x hidden_lstm
-    packed_input = nn.utils.rnn.pack_padded_sequence(x, sent_len, batch_first=True)
-    packed_output, self.hidden = self.lstm(packed_input, self.hidden)
-    output, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True, total_length=seq_len)
+    # packed_input = nn.utils.rnn.pack_padded_sequence(x, sent_len, batch_first=True)
+    output, self.hidden = self.lstm(x, self.hidden)
+    # output, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True, total_length=seq_len)
     # bs_seq_shape = output.shape[:2]
     #bs x seq x hidden_lstm -> (bs*seq) x hidden_lstm
     output = output.contiguous()    
     output = output.view(-1, output.shape[2])
     #(bs*seq) x hidden_lstm -> (bs*seq) x hidden_linear
-    # output = self.linear1(output)
-    # output = F.relu(output)
-    # output = self.dropout_fc(output)
+    output = self.linear1(output)
+    output = F.relu(output)
+    output = self.dropout_fc(output)
     #(bs*seq) x hidden_linear -> (bs*seq) x vocab
     output=self.linear2(output)
     return output
@@ -132,10 +138,10 @@ def fit(epochs, loss_fn, train_dl, valid_dl, model, opt):
   for epoch in range(epochs):
     model.train()
     training_stats = []
-    for xb, sent_len, yb in train_dl:
+    for xb, yb in train_dl:
 
       yb = adjust_target(yb)
-      output = model(xb, sent_len)
+      output = model(xb)
       loss = loss_fn(output, yb, ignore_index=0)
       epoch_loss = loss
 
@@ -145,9 +151,9 @@ def fit(epochs, loss_fn, train_dl, valid_dl, model, opt):
 
     model.eval()
     with torch.no_grad():
-      for xb, sent_len, yb in valid_dl:
+      for xb, yb in valid_dl:
         yb = adjust_target(yb)
-        output = model(xb, sent_len)
+        output = model(xb)
         training_stats.append([loss_fn(output, yb),accuracy(output, yb)])
     training_stats = np.asarray(training_stats)
     epoch_loss, epoch_accuracy = np.mean(training_stats, axis=0)
@@ -156,13 +162,13 @@ def fit(epochs, loss_fn, train_dl, valid_dl, model, opt):
 
 if __name__ == '__main__':
   #files
-  infile = './data2.csv'
-  dicfile = './word_dic2.json'
+  infile = './data3.csv'
+  dicfile = './word_dic3.json'
 
   #hyperparameters
-  nb_vocab = 5845  
+  nb_vocab = 7113  
   bs = 128
-  embed = 30
+  embed = 50
   lstm_layers = 2
   hidden_lstm = 100
   hidden_linear = 100
@@ -175,20 +181,21 @@ if __name__ == '__main__':
 
   #data
   data = load_data(infile)
-  data_x, data_y = split_input_output(data, min_input=5, min_pred=10, max_len=seq_len)
+  data_x, data_y = split_x_y(data)
   print('Split data into x and y')
-  data_x, sent_len_x = pad_data(data_x, nb_seq = seq_len)
-  data_y, _ = pad_data(data_y, nb_seq = seq_len)
-  print('Padded data')
+  # data_x, sent_len_x = pad_data(data_x, nb_seq = seq_len)
+  # data_y, _ = pad_data(data_y, nb_seq = seq_len)
+  # print('Padded data')
+  data_x = torch.LongTensor(data_x)
+  data_y = torch.LongTensor(data_y)
 
 
   #dataloaders
-  train_ds = TensorDataset(data_x, sent_len_x, data_y)
-  train_dl = DataLoader(train_ds, bs)
+  train_ds = TensorDataset(data_x, data_y)
+  train_dl = DataLoader(train_ds, bs, shuffle=True)
   train_dl = WrappedLoader(train_dl)
   valid_dl = DataLoader(train_ds, bs*2)
   valid_dl = WrappedLoader(valid_dl)
-  pdb.set_trace()
 
   #model
   model = SentenceFinisher(nb_vocab = nb_vocab, embed_dims = embed, nb_layers = lstm_layers, hidden_lstm = hidden_lstm, hidden_fc=hidden_linear, bs=bs, dropout_lstm=dropout_lstm, dropout_fc=dropout_fc)

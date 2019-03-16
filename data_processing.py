@@ -3,6 +3,7 @@ from nltk import tokenize
 import numpy as np
 import csv
 import json
+import pdb
 
 SEQUENCE_LENGTH = 4
 
@@ -40,7 +41,7 @@ def sentence_to_tokens(sentence):
     table = str.maketrans('', '', string.punctuation)
     tokens = [w.translate(table) for w in tokens]
     tokens = [word for word in tokens if word.isalpha()]
-    tokens = [word.lower() for word in tokens]
+    tokens = [word.lower() for word in tokens]  
     return tokens
 
 
@@ -68,7 +69,7 @@ def word2int(vocab):
 
  
 
-def change_to_int(sentences, word_dic):
+def change_to_int(sentences, vocab):
   new_sentences = []
   for sentence in sentences:
     new_sentence = [word_dic[word] for word in sentence]
@@ -78,15 +79,12 @@ def change_to_int(sentences, word_dic):
 
 
 def organise_data(tokens, seq_len):
-  length = seq_len + 1
   sequences = list()
-  for i in range(length, len(tokens)):
+  for i in range(seq_len, len(tokens)):
     # select sequence of tokens
-    seq = tokens[i-length:i]
-    # convert into a line
-    line = ' '.join(seq)
+    seq = tokens[i-seq_len:i]
     # store
-    sequences.append(line)
+    sequences.append(seq)
   return sequences
 
 
@@ -98,7 +96,7 @@ def save_doc(lines, filename):
   file.close()
 
 def write_csv(data, filename):
-  with open(filename,'w') as f:
+  with open(filename,'w', newline='') as f:
     writer = csv.writer(f)
     writer.writerows(data)
   f.close()
@@ -111,16 +109,16 @@ def combine_to_sentence(tokens):
   return sequences
 
 if __name__ == '__main__':
-
   in_filename = 'origin_of_species'
-  out_filename = 'species_sentences'
+  out_filename = 'species_sequences'
+
   doc = load_doc(in_filename)
   sentences = getSentences(doc)
-  sentences = clean_sentences(sentences)
-  vocab = getVocab(sentences)
-  word_dic = word2int(vocab)
-  save_dic(word_dic, 'word_dic2.json')
-  save_doc(combine_to_sentence(sentences), out_filename)
-  data = change_to_int(sentences, word_dic)
-  write_csv(data, 'data2.csv')
+  sentences = ' <eol> '.join(sentences)
+  tokens = sentence_to_tokens(sentences)
+  word_dic = word2int(set(tokens))
+  save_dic(word_dic, 'word_dic3.json')
+  sequences = organise_data(tokens, 50)
+  data = change_to_int(sequences, word_dic)
+  write_csv(data, 'data3.csv')
   
