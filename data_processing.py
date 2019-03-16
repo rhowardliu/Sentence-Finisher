@@ -5,8 +5,6 @@ import csv
 import json
 import pdb
 
-SEQUENCE_LENGTH = 4
-
 # load doc into memory
 def load_doc(filename):
   # open the file as read only

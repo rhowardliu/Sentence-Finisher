@@ -39,24 +39,6 @@ def split_x_y(sequences):
   return data_x, data_y
 
 
-
-def pad_data(data, nb_seq=None, sort=None):
-  sent_len = torch.LongTensor([len(row) for row in data])
-  if nb_seq is None:
-    nb_seq = max(sent_len)
-  batch_size = len(data)
-  padded_data = torch.zeros((batch_size, nb_seq)).long()
-  for i, x_len in enumerate(sent_len):
-    sequence = torch.LongTensor(data[i])
-    padded_data[i, :x_len] = sequence[:x_len]
-  # if sort is None:
-  #   sent_len, sort = sent_len.sort(0, descending=True)
-  # else:
-  #   sent_len=sent_len[sort]
-  # padded_data = padded_data[sort]
-  return padded_data, sent_len
-
-
 class WrappedLoader(object):
   """docstring for WrappedLoader"""
   def __init__(self, dl):
@@ -73,9 +55,7 @@ class WrappedLoader(object):
   def __iter__(self):
     batches = iter(self.dl)
     for b in batches:
-      # sort = self.sort_data(b[1])
       b = [a.to(dev) for a in b]
-      # b = [a[sort] for a in b]
       yield b
 
 
@@ -105,10 +85,7 @@ class SentenceFinisher(nn.Module):
     #bs x seq x 1 -> bs x seq x embed   
     x = self.word_embedding(x)
     #bs x seq x embed -> bs x seq x hidden_lstm
-    # packed_input = nn.utils.rnn.pack_padded_sequence(x, sent_len, batch_first=True)
     output, self.hidden = self.lstm(x, self.hidden)
-    # output, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True, total_length=seq_len)
-    # bs_seq_shape = output.shape[:2]
     #bs x seq x hidden_lstm -> (bs*seq) x hidden_lstm
     output = output.contiguous()    
     output = output.view(-1, output.shape[2])
@@ -183,9 +160,6 @@ if __name__ == '__main__':
   data = load_data(infile)
   data_x, data_y = split_x_y(data)
   print('Split data into x and y')
-  # data_x, sent_len_x = pad_data(data_x, nb_seq = seq_len)
-  # data_y, _ = pad_data(data_y, nb_seq = seq_len)
-  # print('Padded data')
   data_x = torch.LongTensor(data_x)
   data_y = torch.LongTensor(data_y)
 
